@@ -1,0 +1,1872 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Lookback Snapshot Aggregator</title>
+    <!--  (c) 2015 Rally Software Development Corp.  All Rights Reserved. -->
+    <!--  Build Date: Wed Feb 24 2016 11:52:38 GMT-0700 (MST) -->
+    
+    <script type="text/javascript">
+        var APP_BUILD_DATE = "Wed Feb 24 2016 11:52:38 GMT-0700 (MST)";
+        var CHECKSUM = 82737920169;
+    </script>
+    
+    <script type="text/javascript" src="/apps/2.0/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function() {
+             
+/* Blob.js
+ * A Blob implementation.
+ * 2014-05-31
+ * 
+ * By Eli Grey, http://eligrey.com
+ * By Devin Samarin, https://github.com/eboyjr
+ * License: X11/MIT
+ *   See https://github.com/eligrey/Blob.js/blob/master/LICENSE.md
+ */
+
+/*global self, unescape */
+/*jslint bitwise: true, regexp: true, confusion: true, es5: true, vars: true, white: true,
+  plusplus: true */
+
+/*! @source http://purl.eligrey.com/github/Blob.js/blob/master/Blob.js */
+
+(function (view) {
+    "use strict";
+
+    view.URL = view.URL || view.webkitURL;
+
+    if (view.Blob && view.URL) {
+        try {
+            new Blob;
+            return;
+        } catch (e) {}
+    }
+
+    // Internally we use a BlobBuilder implementation to base Blob off of
+    // in order to support older browsers that only have BlobBuilder
+    var BlobBuilder = view.BlobBuilder || view.WebKitBlobBuilder || view.MozBlobBuilder || (function(view) {
+        var
+              get_class = function(object) {
+                return Object.prototype.toString.call(object).match(/^\[object\s(.*)\]$/)[1];
+            }
+            , FakeBlobBuilder = function BlobBuilder() {
+                this.data = [];
+            }
+            , FakeBlob = function Blob(data, type, encoding) {
+                this.data = data;
+                this.size = data.length;
+                this.type = type;
+                this.encoding = encoding;
+            }
+            , FBB_proto = FakeBlobBuilder.prototype
+            , FB_proto = FakeBlob.prototype
+            , FileReaderSync = view.FileReaderSync
+            , FileException = function(type) {
+                this.code = this[this.name = type];
+            }
+            , file_ex_codes = (
+                  "NOT_FOUND_ERR SECURITY_ERR ABORT_ERR NOT_READABLE_ERR ENCODING_ERR "
+                + "NO_MODIFICATION_ALLOWED_ERR INVALID_STATE_ERR SYNTAX_ERR"
+            ).split(" ")
+            , file_ex_code = file_ex_codes.length
+            , real_URL = view.URL || view.webkitURL || view
+            , real_create_object_URL = real_URL.createObjectURL
+            , real_revoke_object_URL = real_URL.revokeObjectURL
+            , URL = real_URL
+            , btoa = view.btoa
+            , atob = view.atob
+            
+            , ArrayBuffer = view.ArrayBuffer
+            , Uint8Array = view.Uint8Array
+        ;
+        FakeBlob.fake = FB_proto.fake = true;
+        while (file_ex_code--) {
+            FileException.prototype[file_ex_codes[file_ex_code]] = file_ex_code + 1;
+        }
+        if (!real_URL.createObjectURL) {
+            URL = view.URL = {};
+        }
+        URL.createObjectURL = function(blob) {
+            var
+                  type = blob.type
+                , data_URI_header
+            ;
+            if (type === null) {
+                type = "application/octet-stream";
+            }
+            if (blob instanceof FakeBlob) {
+                data_URI_header = "data:" + type;
+                if (blob.encoding === "base64") {
+                    return data_URI_header + ";base64," + blob.data;
+                } else if (blob.encoding === "URI") {
+                    return data_URI_header + "," + decodeURIComponent(blob.data);
+                } if (btoa) {
+                    return data_URI_header + ";base64," + btoa(blob.data);
+                } else {
+                    return data_URI_header + "," + encodeURIComponent(blob.data);
+                }
+            } else if (real_create_object_URL) {
+                return real_create_object_URL.call(real_URL, blob);
+            }
+        };
+        URL.revokeObjectURL = function(object_URL) {
+            if (object_URL.substring(0, 5) !== "data:" && real_revoke_object_URL) {
+                real_revoke_object_URL.call(real_URL, object_URL);
+            }
+        };
+        FBB_proto.append = function(data/*, endings*/) {
+            var bb = this.data;
+            // decode data to a binary string
+            if (Uint8Array && (data instanceof ArrayBuffer || data instanceof Uint8Array)) {
+                var
+                      str = ""
+                    , buf = new Uint8Array(data)
+                    , i = 0
+                    , buf_len = buf.length
+                ;
+                for (; i < buf_len; i++) {
+                    str += String.fromCharCode(buf[i]);
+                }
+                bb.push(str);
+            } else if (get_class(data) === "Blob" || get_class(data) === "File") {
+                if (FileReaderSync) {
+                    var fr = new FileReaderSync;
+                    bb.push(fr.readAsBinaryString(data));
+                } else {
+                    // async FileReader won't work as BlobBuilder is sync
+                    throw new FileException("NOT_READABLE_ERR");
+                }
+            } else if (data instanceof FakeBlob) {
+                if (data.encoding === "base64" && atob) {
+                    bb.push(atob(data.data));
+                } else if (data.encoding === "URI") {
+                    bb.push(decodeURIComponent(data.data));
+                } else if (data.encoding === "raw") {
+                    bb.push(data.data);
+                }
+            } else {
+                if (typeof data !== "string") {
+                    data += ""; // convert unsupported types to strings
+                }
+                // decode UTF-16 to binary string
+                bb.push(unescape(encodeURIComponent(data)));
+            }
+        };
+        FBB_proto.getBlob = function(type) {
+            if (!arguments.length) {
+                type = null;
+            }
+            return new FakeBlob(this.data.join(""), type, "raw");
+        };
+        FBB_proto.toString = function() {
+            return "[object BlobBuilder]";
+        };
+        FB_proto.slice = function(start, end, type) {
+            var args = arguments.length;
+            if (args < 3) {
+                type = null;
+            }
+            return new FakeBlob(
+                  this.data.slice(start, args > 1 ? end : this.data.length)
+                , type
+                , this.encoding
+            );
+        };
+        FB_proto.toString = function() {
+            return "[object Blob]";
+        };
+        FB_proto.close = function() {
+            this.size = 0;
+            delete this.data;
+        };
+        return FakeBlobBuilder;
+    }(view));
+
+    view.Blob = function Blob(blobParts, options) {
+        var type = options ? (options.type || "") : "";
+        var builder = new BlobBuilder();
+        if (blobParts) {
+            for (var i = 0, len = blobParts.length; i < len; i++) {
+                builder.append(blobParts[i]);
+            }
+        }
+        return builder.getBlob(type);
+    };
+}(typeof self !== "undefined" && self || typeof window !== "undefined" && window || this.content || this));
+/* FileSaver.js
+ *  A saveAs() FileSaver implementation.
+ *  2014-05-27
+ *
+ *  By Eli Grey, http://eligrey.com
+ *  License: X11/MIT
+ *    See https://github.com/eligrey/FileSaver.js/blob/master/LICENSE.md
+ */
+
+/*global self */
+/*jslint bitwise: true, indent: 4, laxbreak: true, laxcomma: true, smarttabs: true, plusplus: true */
+
+/*! @source http://purl.eligrey.com/github/FileSaver.js/blob/master/FileSaver.js */
+
+var saveAs = saveAs
+  // IE 10+ (native saveAs)
+  || (typeof navigator !== "undefined" &&
+      navigator.msSaveOrOpenBlob && navigator.msSaveOrOpenBlob.bind(navigator))
+  // Everyone else
+  || (function(view) {
+    "use strict";
+    // IE <10 is explicitly unsupported
+    if (typeof navigator !== "undefined" &&
+        /MSIE [1-9]\./.test(navigator.userAgent)) {
+        return;
+    }
+    var
+          doc = view.document
+          // only get URL when necessary in case Blob.js hasn't overridden it yet
+        , get_URL = function() {
+            return view.URL || view.webkitURL || view;
+        }
+        , save_link = doc.createElementNS("http://www.w3.org/1999/xhtml", "a")
+        , can_use_save_link = !view.externalHost && "download" in save_link
+        , click = function(node) {
+            var event = doc.createEvent("MouseEvents");
+            event.initMouseEvent(
+                "click", true, false, view, 0, 0, 0, 0, 0
+                , false, false, false, false, 0, null
+            );
+            node.dispatchEvent(event);
+        }
+        , webkit_req_fs = view.webkitRequestFileSystem
+        , req_fs = view.requestFileSystem || webkit_req_fs || view.mozRequestFileSystem
+        , throw_outside = function(ex) {
+            (view.setImmediate || view.setTimeout)(function() {
+                throw ex;
+            }, 0);
+        }
+        , force_saveable_type = "application/octet-stream"
+        , fs_min_size = 0
+        , deletion_queue = []
+        , process_deletion_queue = function() {
+            var i = deletion_queue.length;
+            while (i--) {
+                var file = deletion_queue[i];
+                if (typeof file === "string") { // file is an object URL
+                    get_URL().revokeObjectURL(file);
+                } else { // file is a File
+                    file.remove();
+                }
+            }
+            deletion_queue.length = 0; // clear queue
+        }
+        , dispatch = function(filesaver, event_types, event) {
+            event_types = [].concat(event_types);
+            var i = event_types.length;
+            while (i--) {
+                var listener = filesaver["on" + event_types[i]];
+                if (typeof listener === "function") {
+                    try {
+                        listener.call(filesaver, event || filesaver);
+                    } catch (ex) {
+                        throw_outside(ex);
+                    }
+                }
+            }
+        }
+        , FileSaver = function(blob, name) {
+            // First try a.download, then web filesystem, then object URLs
+            var
+                  filesaver = this
+                , type = blob.type
+                , blob_changed = false
+                , object_url
+                , target_view
+                , get_object_url = function() {
+                    var object_url = get_URL().createObjectURL(blob);
+                    deletion_queue.push(object_url);
+                    return object_url;
+                }
+                , dispatch_all = function() {
+                    dispatch(filesaver, "writestart progress write writeend".split(" "));
+                }
+                // on any filesys errors revert to saving with object URLs
+                , fs_error = function() {
+                    // don't create more object URLs than needed
+                    if (blob_changed || !object_url) {
+                        object_url = get_object_url(blob);
+                    }
+                    if (target_view) {
+                        target_view.location.href = object_url;
+                    } else {
+                        window.open(object_url, "_blank");
+                    }
+                    filesaver.readyState = filesaver.DONE;
+                    dispatch_all();
+                }
+                , abortable = function(func) {
+                    return function() {
+                        if (filesaver.readyState !== filesaver.DONE) {
+                            return func.apply(this, arguments);
+                        }
+                    };
+                }
+                , create_if_not_found = {create: true, exclusive: false}
+                , slice
+            ;
+            filesaver.readyState = filesaver.INIT;
+            if (!name) {
+                name = "download";
+            }
+            if (can_use_save_link) {
+                object_url = get_object_url(blob);
+                save_link.href = object_url;
+                save_link.download = name;
+                click(save_link);
+                filesaver.readyState = filesaver.DONE;
+                dispatch_all();
+                return;
+            }
+            // Object and web filesystem URLs have a problem saving in Google Chrome when
+            // viewed in a tab, so I force save with application/octet-stream
+            // http://code.google.com/p/chromium/issues/detail?id=91158
+            if (view.chrome && type && type !== force_saveable_type) {
+                slice = blob.slice || blob.webkitSlice;
+                blob = slice.call(blob, 0, blob.size, force_saveable_type);
+                blob_changed = true;
+            }
+            // Since I can't be sure that the guessed media type will trigger a download
+            // in WebKit, I append .download to the filename.
+            // https://bugs.webkit.org/show_bug.cgi?id=65440
+            if (webkit_req_fs && name !== "download") {
+                name += ".download";
+            }
+            if (type === force_saveable_type || webkit_req_fs) {
+                target_view = view;
+            }
+            if (!req_fs) {
+                fs_error();
+                return;
+            }
+            fs_min_size += blob.size;
+            req_fs(view.TEMPORARY, fs_min_size, abortable(function(fs) {
+                fs.root.getDirectory("saved", create_if_not_found, abortable(function(dir) {
+                    var save = function() {
+                        dir.getFile(name, create_if_not_found, abortable(function(file) {
+                            file.createWriter(abortable(function(writer) {
+                                writer.onwriteend = function(event) {
+                                    target_view.location.href = file.toURL();
+                                    deletion_queue.push(file);
+                                    filesaver.readyState = filesaver.DONE;
+                                    dispatch(filesaver, "writeend", event);
+                                };
+                                writer.onerror = function() {
+                                    var error = writer.error;
+                                    if (error.code !== error.ABORT_ERR) {
+                                        fs_error();
+                                    }
+                                };
+                                "writestart progress write abort".split(" ").forEach(function(event) {
+                                    writer["on" + event] = filesaver["on" + event];
+                                });
+                                writer.write(blob);
+                                filesaver.abort = function() {
+                                    writer.abort();
+                                    filesaver.readyState = filesaver.DONE;
+                                };
+                                filesaver.readyState = filesaver.WRITING;
+                            }), fs_error);
+                        }), fs_error);
+                    };
+                    dir.getFile(name, {create: false}, abortable(function(file) {
+                        // delete file if it already exists
+                        file.remove();
+                        save();
+                    }), abortable(function(ex) {
+                        if (ex.code === ex.NOT_FOUND_ERR) {
+                            save();
+                        } else {
+                            fs_error();
+                        }
+                    }));
+                }), fs_error);
+            }), fs_error);
+        }
+        , FS_proto = FileSaver.prototype
+        , saveAs = function(blob, name) {
+            return new FileSaver(blob, name);
+        }
+    ;
+    FS_proto.abort = function() {
+        var filesaver = this;
+        filesaver.readyState = filesaver.DONE;
+        dispatch(filesaver, "abort");
+    };
+    FS_proto.readyState = FS_proto.INIT = 0;
+    FS_proto.WRITING = 1;
+    FS_proto.DONE = 2;
+
+    FS_proto.error =
+    FS_proto.onwritestart =
+    FS_proto.onprogress =
+    FS_proto.onwrite =
+    FS_proto.onabort =
+    FS_proto.onerror =
+    FS_proto.onwriteend =
+        null;
+
+    view.addEventListener("unload", process_deletion_queue, false);
+    saveAs.unload = function() {
+        process_deletion_queue();
+        view.removeEventListener("unload", process_deletion_queue, false);
+    };
+    return saveAs;
+}(
+       typeof self !== "undefined" && self
+    || typeof window !== "undefined" && window
+    || this.content
+));
+// `self` is undefined in Firefox for Android content script context
+// while `this` is nsIContentFrameMessageManager
+// with an attribute `content` that corresponds to the window
+
+if (typeof module !== "undefined" && module !== null) {
+  module.exports = saveAs;
+} else if ((typeof define !== "undefined" && define !== null) && (define.amd != null)) {
+  define([], function() {
+    return saveAs;
+  });
+}
+/**
+ * A link that pops up a version dialog box
+ */
+
+Ext.define('Rally.technicalservices.InfoLink',{
+    extend: 'Rally.ui.dialog.Dialog',
+    alias: 'widget.tsinfolink',
+    
+    /**
+     * @cfg {String} informationHtml
+     * Additional text to be displayed on the popup dialog (for exmaple,
+     * to add a description of the app's use or functionality)
+     */
+    informationHtml: null,
+    
+    /**
+     * 
+     * cfg {String} title
+     * The title for the dialog box
+     */
+    title: "Build Information",
+    
+    defaults: { padding: 5, margin: 5 },
+
+    closable: true,
+     
+    draggable: true,
+
+    autoShow: true,
+   
+    width: 350, 
+    
+    initComponent: function() {
+        var id = Ext.id(this);
+        this.title =  "<span class='icon-help'> </span>" + this.title;
+        this.callParent(arguments);
+    },
+    
+    _generateChecksum: function(string){
+        var chk = 0x12345678,
+            i;
+        string = string.replace(/var CHECKSUM = .*;/,"");
+        string = string.replace(/\s/g,"");  //Remove all whitespace from the string.
+        
+        for (i = 0; i < string.length; i++) {
+            chk += (string.charCodeAt(i) * i);
+        }
+    
+        return chk;
+    },
+    
+    _checkChecksum: function(container) {
+        var deferred = Ext.create('Deft.Deferred');
+        console.log("_checkChecksum", container);
+        var me = this;
+        
+        Ext.Ajax.request({
+            url: document.URL,
+            params: {
+                id: 1
+            },
+            success: function (response) {
+                text = response.responseText;
+                if ( CHECKSUM ) {
+                    if ( CHECKSUM !== me._generateChecksum(text) ) {
+                        console.log("Checksums don't match!");
+                        deferred.resolve(false);
+                        return;
+                    }
+                }
+                deferred.resolve(true);
+            }
+        });
+        
+        return deferred.promise;
+    },
+    
+    afterRender: function() {
+        var app = Rally.getApp();
+        
+        if (! app.isExternal() ) {
+                
+            this._checkChecksum(app).then({
+                scope: this,
+                success: function(result){
+                    if ( !result ) {
+                        this.addDocked({
+                            xtype:'container',
+                            cls: 'build-info',
+                            padding: 2,
+                            html:'<span class="icon-warning"> </span>Checksums do not match'
+                        });
+                    }
+                },
+                failure: function(msg){
+                    console.log("oops:",msg);
+                }
+            });
+        } else {
+            this.addDocked({
+                xtype:'container',
+                cls: 'build-info',
+                padding: 2,
+                html:'... Running externally'
+            });
+        }
+        this.callParent(arguments);
+    },
+    
+    beforeRender: function() {
+        var me = this;
+        this.callParent(arguments);
+
+        if (this.informationHtml) {
+            this.addDocked({
+                xtype: 'component',
+                componentCls: 'intro-panel',
+                padding: 2,
+                html: this.informationHtml
+            });
+        }
+        
+        this.addDocked({
+            xtype:'container',
+            cls: 'build-info',
+            padding: 2,
+            html:"This app was created by the Rally Technical Services Team."
+        });
+        
+        if ( APP_BUILD_DATE ) {
+            this.addDocked({
+                xtype:'container',
+                cls: 'build-info',
+                padding: 2,
+                html:'Build date/time: ' + APP_BUILD_DATE
+            });
+        }
+    }
+});
+
+/*
+ */
+Ext.define('Rally.technicalservices.Logger',{
+    constructor: function(config){
+        Ext.apply(this,config);
+    },
+    log: function(args){
+        var timestamp = "[ " + Ext.util.Format.date(new Date(), "Y-m-d H:i:s.u") + " ]";
+        //var output_args = arguments;
+        //output_args.unshift( [ "[ " + timestamp + " ]" ] );
+        //output_args = Ext.Array.push(output_args,arguments);
+        
+        var output_args = [];
+        output_args = Ext.Array.push(output_args,[timestamp]);
+        output_args = Ext.Array.push(output_args, Ext.Array.slice(arguments,0));
+
+        window.console && console.log.apply(console,output_args);
+    }
+
+});
+
+Ext.define('Rally.technicalServices.LookbackSnapshotAggregatorSettings',{
+    singleton: true,
+
+    /**
+     * Hardcoded types and fields for the configuration options
+     */
+    configurationMap: {
+        HierarchicalRequirement: {
+            name: 'HierarchicalRequirement',
+            displayName: 'User Story',
+            fetch: ['Feature','PortfolioItem','ObjectID','FormattedID','Name','Project','PlanEstimate','ScheduleState'],
+            fields: ['Feature Object Id','Story Object Id','Story Formatted Id','Story Name','Team Object Id','Team Name','Story Point','Story State'],
+            hydrate: ['ScheduleState','Project'],
+            fieldMapping: {
+                "Feature Object Id": function(snapData){
+                    if (snapData.Feature){
+                        return snapData.Feature;
+                    }
+                    if (snapData.PortfolioItem){
+                        return snapData.PortfolioItem;
+                    }
+                    return "";
+                },
+                "Story Object Id": function(snapData) {
+                    return snapData.ObjectID;
+                },
+                "Story Formatted Id": function(snapData) {
+                    return snapData.FormattedID;
+                },
+                "Story Name": function(snapData) {
+                    return snapData.Name;
+                },
+                "Team Object Id": function(snapData){
+                    return snapData.Project.ObjectID;
+                },
+                "Team Name": function(snapData){
+                    return snapData.Project.Name;
+                },
+                "Story Point": function(snapData){
+                    return snapData.PlanEstimate;
+                },
+                "Story State": function(snapData){
+                    return snapData.ScheduleState;
+                }
+            },
+            find: {DirectChildrenCount: 0}
+        },
+        "PortfolioItem/Feature": {
+            name: 'PortfolioItem/Feature',
+            displayName: 'Feature',
+             fetch: ['ObjectID','FormattedID','Name','Parent','PreliminaryEstimate','Project','State'],
+            fields: ['Feature Object Id','Feature Formatted Id','Feature Name','Initiative Object Id','Preliminary Estimate Value','Preliminary Estimate Name','Team Object Id','Team Name','State'],
+            fieldMapping: {
+                "Feature Object Id": function(snapData) {
+                    return snapData.ObjectID;
+                },
+                "Feature Formatted Id": function(snapData) {
+                    return snapData.FormattedID;
+                },
+                "Feature Name": function(snapData) {
+                    return snapData.Name;
+                },
+                "Initiative Object Id": function(snapData) {
+                   return snapData.Parent || "";
+                },
+                "Preliminary Estimate Value": function(snapData) {
+                     if (snapData.PreliminaryEstimate){
+                        return Rally.technicalServices.LookbackSnapshotAggregatorSettings.preliminaryEstimateMap[snapData.PreliminaryEstimate] &&
+                            Rally.technicalServices.LookbackSnapshotAggregatorSettings.preliminaryEstimateMap[snapData.PreliminaryEstimate].Value || "";
+                    }
+                   return "";
+                },
+                "Preliminary Estimate Name": function(snapData) {
+                     if (snapData.PreliminaryEstimate){
+                        return Rally.technicalServices.LookbackSnapshotAggregatorSettings.preliminaryEstimateMap[snapData.PreliminaryEstimate] &&
+                            Rally.technicalServices.LookbackSnapshotAggregatorSettings.preliminaryEstimateMap[snapData.PreliminaryEstimate].Name || "";
+                    }
+                    return "";
+                },
+                "Team Object Id": function(snapData){
+                    return snapData.Project.ObjectID;
+                },
+                "Team Name": function(snapData){
+                    return snapData.Project.Name;
+                }
+            },
+            hydrate: ['Project','State']
+        },
+        "PortfolioItem/Initiative": {
+            name: 'PortfolioItem/Initiative',
+            displayName: 'Initiative',
+            fetch: ['ObjectID','FormattedID','Name','PreliminaryEstimate','Project','InvestmentCategory','State'],
+            fields: ['Initiative Object Id','Initiative Formatted Id','Initiative Name','Preliminary Estimate Value','Preliminary Estimate Name','Team Object Id','Team Name','Investment Category','State'],
+            fieldMapping: {
+                "Initiative Object Id": function (snapData) {
+                    return snapData.ObjectID;
+                },
+                "Initiative Formatted Id": function (snapData) {
+                    return snapData.FormattedID;
+                },
+                "Initiative Name": function (snapData) {
+                    return snapData.Name;
+                },
+                "Preliminary Estimate Value": function(snapData) {
+                    if (snapData.PreliminaryEstimate){
+                        return Rally.technicalServices.LookbackSnapshotAggregatorSettings.preliminaryEstimateMap[snapData.PreliminaryEstimate] &&
+                            Rally.technicalServices.LookbackSnapshotAggregatorSettings.preliminaryEstimateMap[snapData.PreliminaryEstimate].Value || "";
+                    }
+                    return "";
+                },
+                "Preliminary Estimate Name": function(snapData) {
+                    if (snapData.PreliminaryEstimate){
+                        return Rally.technicalServices.LookbackSnapshotAggregatorSettings.preliminaryEstimateMap[snapData.PreliminaryEstimate] &&
+                            Rally.technicalServices.LookbackSnapshotAggregatorSettings.preliminaryEstimateMap[snapData.PreliminaryEstimate].Name || "";
+                    }
+                    return "";
+                },
+                "Team Object Id": function (snapData) {
+                    return snapData.Project.ObjectID;
+                },
+                "Team Name": function (snapData) {
+                    return snapData.Project.Name;
+                },
+                "Investment Category": function (snapData) {
+                    return snapData.InvestmentCategory;
+                }
+            },
+            hydrate: ['Project','State']
+        }
+    },
+
+    aggregateByOptions: [{
+        name: 'Day',
+        value: 'day'
+    },{
+        name: 'None',
+        value: 'none'
+    }],
+
+    getFields: function(){
+        var configurationData = _.values(this.configurationMap),
+            width = 100;
+
+        return [{
+            xtype: 'rallycombobox',
+            name: 'aggregateBy',
+            store: Ext.create('Ext.data.Store',{data: this.aggregateByOptions, fields: ['name','value']}),
+            displayField: 'name',
+            valueField: 'value',
+            labelAlign: 'right',
+            labelWidth: width,
+            fieldLabel: "Aggregate By"
+        },{
+            xtype: 'rallycombobox',
+            name: 'artifactType',
+            store: Ext.create('Ext.data.Store', {data: configurationData, fields: ['name','displayName']}),
+            fieldLabel: "Artifact Type",
+            labelAlign: 'right',
+            labelWidth: width,
+            displayField: 'displayName',
+            valueField: 'name'
+        }];
+    }
+});
+
+Ext.define('Rally.technicalservices.FileUtilities', {
+    singleton: true,
+    logger: new Rally.technicalservices.Logger(),
+    saveCSVToFile:function(csv,file_name,type_object){
+            if (type_object == undefined){
+                type_object = {type:'text/csv;charset=utf-8'};
+            }
+            var blob = new Blob([csv],type_object);
+            saveAs(blob,file_name);
+    },
+    saveTextAsFile: function(textToWrite, fileName)
+    {
+        var textFileAsBlob = new Blob([textToWrite], {type:'text/plain'});
+        var fileNameToSaveAs = fileName;
+
+        var downloadLink = document.createElement("a");
+        downloadLink.download = fileNameToSaveAs;
+        downloadLink.innerHTML = "Download File";
+        if (window.webkitURL != null)
+        {
+            // Chrome allows the link to be clicked
+            // without actually adding it to the DOM.
+            downloadLink.href = window.webkitURL.createObjectURL(textFileAsBlob);
+        }
+        else
+        {
+            // Firefox requires the link to be added to the DOM
+            // before it can be clicked.
+            downloadLink.href = window.URL.createObjectURL(textFileAsBlob);
+            downloadLink.onclick = destroyClickedElement;
+            downloadLink.style.display = "none";
+            document.body.appendChild(downloadLink);
+        }
+        downloadLink.click();
+    },
+    destroyClickedElement: function(event)
+    {
+        document.body.removeChild(event.target);
+    },
+    convertDataArrayToCSVText: function(data_array, requestedFieldHash){
+       
+        var text = '';
+        Ext.each(Object.keys(requestedFieldHash), function(key){
+            text += requestedFieldHash[key] || key + ',';
+        });
+        text = text.replace(/,$/,'\n');
+        
+        Ext.each(data_array, function(d){
+            Ext.each(Object.keys(requestedFieldHash), function(key){
+                if (d[key]){
+                    if (typeof d[key] === 'object'){
+                        if (d[key].FormattedID) {
+                            text += Ext.String.format("\"{0}\",",d[key].FormattedID ); 
+                        } else if (d[key].Name) {
+                            text += Ext.String.format("\"{0}\",",d[key].Name );                    
+                        } else if (!isNaN(Date.parse(d[key]))){
+                            text += Ext.String.format("\"{0}\",",Rally.util.DateTime.formatWithDefaultDateTime(d[key]));
+                        }else {
+                            text += Ext.String.format("\"{0}\",",d[key].toString());
+                        }
+                    } else {
+                        text += Ext.String.format("\"{0}\",",d[key] );                    
+                    }
+                } else {
+                    text += ',';
+                }
+            },this);
+            text = text.replace(/,$/,'\n');
+        },this);
+        return text;
+    },
+    /*
+     * will render using your grid renderer.  If you want it to ignore the grid renderer, 
+     * have the column set _csvIgnoreRender: true
+     */
+    getCSVFromGrid:function(grid){
+        var deferred = Ext.create('Deft.Deferred');
+        var store = grid.getStore();
+                
+        var columns = grid.columns;
+        var column_names = [];
+        var headers = [];
+        
+        var csv = [];
+        
+        Ext.Array.each(columns,function(column){
+            if ( column.dataIndex || column.renderer ) {
+                column_names.push(column.dataIndex);
+                if ( column.csvText ) {
+                    headers.push(column.csvText);
+                } else {
+                    headers.push(column.text);
+                }
+            }
+        });
+
+        
+        var mock_meta_data = {
+            align: "right",
+            classes: [],
+            cellIndex: 9,
+            column: null,
+            columnIndex: 9,
+            innerCls: undefined,
+            recordIndex: 5,
+            rowIndex: 5,
+            style: "",
+            tdAttr: "",
+            tdCls: "x-grid-cell x-grid-td x-grid-cell-headerId-gridcolumn-1029 x-grid-cell-last x-unselectable",
+            unselectableAttr: "unselectable='on'"
+        }
+
+        var pageSize = store.pageSize,
+            totalPages = Math.ceil(store.getTotalCount()/pageSize),
+            promises = [];
+
+        for (var currentPage=1; currentPage <= totalPages; currentPage++){
+            promises.push(this.loadPage(store, grid, currentPage, columns,mock_meta_data));
+        }
+        Deft.Promise.all(promises).then({
+            success: function(results){
+               // console.log('headers',headers,headers.join(','));
+                var csv = [headers.join(',')].concat(_.flatten(results));
+                csv = csv.join('\n');
+                deferred.resolve(csv);
+            },
+            scope: this
+        });
+        return deferred.promise;
+        
+    },
+    loadPage: function(store, grid, currentPage,columns, mock_meta_data){
+        var deferred = Ext.create('Deft.Deferred'),
+            csv = [];
+
+        store.loadPage(currentPage, {
+            callback: function(records){
+                for ( var i=0; i<records.length; i++ ) {
+                    var record = records[i];
+
+                    var node_values = [];
+                    Ext.Array.each(columns,function(column){
+                        if (column.xtype != 'rallyrowactioncolumn'){
+                            if ( column.dataIndex) {
+                                var column_name = column.dataIndex;
+                                var display_value = record.get(column_name);
+
+                                if ( !column._csvIgnoreRender && column.renderer ) {
+                                    if (column.exportRenderer){
+                                        display_value = column.exportRenderer(display_value,mock_meta_data,record, 0, 0, store, grid.getView());
+                                    } else {
+                                        display_value = column.renderer(display_value,mock_meta_data,record, 0, 0, store, grid.getView());
+                                    }
+                                }
+                                node_values.push(display_value);
+                            } else {
+                                var display_value = null;
+                                if ( !column._csvIgnoreRender && column.renderer ) {
+                                    if (column.exportRenderer){
+                                        display_value = column.exportRenderer(display_value,mock_meta_data,record,record, 0, 0, store, grid.getView());
+                                    } else {
+                                        display_value = column.renderer(display_value,mock_meta_data,record,record, 0, 0, store, grid.getView());
+                                    }
+                                    node_values.push(display_value);
+                                }
+                            }
+                        }
+                    },this);
+
+                    node_values = _.map(node_values, function(v){ return Ext.String.format("\"{0}\"", v.toString().replace(/"/g, "\"\""));});
+                    csv.push(node_values.join(','));
+                }
+                deferred.resolve(csv);
+            }
+        });
+        return deferred;
+    }
+
+});
+Ext.define('Rally.technicalservices.AggregateStoreFactory',{
+    extend: 'Rally.data.lookback.SnapshotStore',
+
+    logger: new Rally.technicalservices.Logger(),
+    snapshots: null,
+
+    startDate: null,
+    endDate: null,
+    aggregateBy: null,
+
+    constructor: function(config){
+        this.logger.log('constructor',config);
+        this.startDate = config.startDate;
+        this.endDate = config.endDate;
+        this.aggregateBy = config.aggregateBy || null;
+        this.configurationMap = config.configurationMap;
+
+        config.sort = { _ValidFrom: 1 };  //The aggregator class needs snapshots to be sorted ascending in order.
+        this.callParent([config]);
+
+        this.on('load', this._aggregateSnapshots, this);
+    },
+
+    _aggregateSnapshots: function(store, snapshots, success){
+        this.snapshots = snapshots;
+
+        this.logger.log('_aggregateSnapshots',this.aggregateBy, this.fetch, snapshots, success);
+        if (success){
+            var aggregator = Ext.create('Rally.technicalservices.SnapshotAggregator',{
+                snapshots: this.snapshots,
+                aggregateBy: this.aggregateBy,
+                startDate: this.startDate,
+                endDate: this.endDate,
+                configurationMap: this.configurationMap
+            });
+
+            this.fireEvent('storeready', aggregator.getData(), aggregator.getStoreFields());
+        } else {
+            this.fireEvent('error', "Error loading snapshots.");
+        }
+    }
+});
+
+Ext.define('Rally.technicalservices.SnapshotAggregator',{
+
+    data: undefined,
+    aggregateField: "Day",
+    snapAggregateField: "_ValidFrom",
+
+    constructor: function(config){
+            var snapshots = config.snapshots || [],
+                aggregateBy = config.aggregateBy || null,
+                startDate = config.startDate,
+                endDate = config.endDate;
+
+        this.configurationMap = config.configurationMap;
+
+        this.data = this._aggregate(snapshots, aggregateBy, startDate, endDate);
+    },
+    getData: function(){
+        return this.data;
+    },
+    getStoreFields: function(){
+        var fields = [this.aggregateField];
+        fields = fields.concat(this.configurationMap.fields);
+        return fields;
+    },
+    _aggregate: function(snapshots, aggregateBy, startDate, endDate){
+        if (aggregateBy === 'none'){
+            return this._rawData(snapshots);
+        }
+
+        if (aggregateBy === 'day'){
+            return this._aggregateByDay(snapshots,startDate, endDate);
+        }
+
+        return [];
+    },
+    _rawData: function(snapshots){
+        var data = [],
+            aggregateField = this.aggregateField;
+
+        _.each(snapshots, function(s){
+            var r = this._getSnapRow(s.getData())
+            r[aggregateField] = Rally.util.DateTime.fromIsoString(s.get("_ValidFrom"));
+            data.push(r);
+        }, this);
+        return data;
+    },
+    _getSnapRow: function(snapData){
+        var r = {},
+            fields = this.configurationMap.fields,
+            fieldMapping = this.configurationMap.fieldMapping;
+
+        _.each(fields, function(f){
+            if (fieldMapping[f]){
+                r[f] = fieldMapping[f](snapData);
+            } else {
+                r[f] = snapData[f] || '';
+            }
+        });
+        return r;
+    },
+    _aggregateByDay: function(snapshots, startDate, endDate){
+        var newDateField = "date_changed",
+            snapsByOid = this._aggregateSnapsByOid(snapshots, newDateField),
+            dateBuckets = [endDate],
+            //dateBuckets = this._getDateBuckets(startDate, endDate, 'day'),
+            aggregateField = this.aggregateField,
+            data = [];
+
+        _.each(dateBuckets, function(day){
+            _.each(snapsByOid, function(snaps){
+                var objectDayRow = {};
+                _.each(snaps, function(snap){
+                    if (snap[newDateField] < day){
+                        objectDayRow = this._getSnapRow(snap);
+                        objectDayRow[aggregateField] = day;
+                    }
+                }, this);
+                data.push(objectDayRow);
+            }, this);
+        }, this);
+        return data;
+    },
+    _aggregateSnapsByOid: function(snaps, newDateField) {
+        //Return a hash of objects (key=ObjectID) with all snapshots for the object
+        var snaps_by_oid = {};
+        Ext.each(snaps, function (snap) {
+            var oid = snap.ObjectID || snap.get('ObjectID');
+            if (snaps_by_oid[oid] == undefined) {
+                snaps_by_oid[oid] = [];
+            }
+            var data = snap.getData();
+            data[newDateField] = Rally.util.DateTime.fromIsoString(snap.get('_ValidFrom'));
+            snaps_by_oid[oid].push(data);
+        });
+        return snaps_by_oid;
+    },
+
+    _getDateBuckets: function(startDate, endDate, granularity){
+        //Todo: once we start adding more granularity, this will need to be updated to get a different bucket start date
+        var bucketStartDate = startDate;
+        var bucketEndDate = Rally.util.DateTime.add(endDate, granularity, 1);
+        bucketEndDate = Rally.util.DateTime.add(bucketEndDate, "millisecond",-1);
+
+        var date = bucketStartDate;
+
+        var buckets = [];
+        while (date<bucketEndDate && bucketStartDate < bucketEndDate){
+            buckets.push(date);
+            date = Rally.util.DateTime.add(date,granularity,1);
+        }
+        return buckets;
+    }
+
+
+});
+
+Ext.define("Rally.technicalServices.LookbackSnapshotAggregator", {
+    extend: 'Rally.app.App',
+    componentCls: 'app',
+    logger: new Rally.technicalservices.Logger(),
+    defaults: { margin: 10 },
+
+    items: [
+        {xtype:'container',itemId:'selector_box',layout: {type: 'hbox'}},
+        {xtype:'container',itemId:'display_box'}
+    ],
+
+    config: {
+        defaultSettings: {
+            aggregateBy: 'day',
+            artifactType: 'HierarchicalRequirement',
+            maxDayRange: 30,
+            defaultDayRange: 7
+        }
+    },
+
+    launch: function() {
+         //initialize the preliminary estimate field mapping
+        Ext.create('Rally.data.wsapi.Store',{
+            model:'PreliminaryEstimate',
+            fetch: true
+        }).load({
+            callback: function(records){
+                this.logger.log('PreliminaryEstimate Hydration', records);
+                var oidValueHash = {};
+                _.each(records, function(r){
+                    oidValueHash[r.get('ObjectID')] = {};
+                    oidValueHash[r.get('ObjectID')].Value = r.get('Value');
+                    oidValueHash[r.get('ObjectID')].Name = r.get('Name');
+                });
+                Rally.technicalServices.LookbackSnapshotAggregatorSettings.preliminaryEstimateMap = oidValueHash;
+                //Rally.technicalServices.LookbackSnapshotAggregatorSettings.configurationMap["PortfolioItem/Initiative"].fieldMapping.PreliminaryEstimate = function(snapData){
+                //    return oidValueHash[snapData.PreliminaryEstimate].Name || "";
+                //};
+                //Rally.technicalServices.LookbackSnapshotAggregatorSettings.configurationMap["PortfolioItem/Feature"].fieldMapping.PreliminaryEstimate = function(snapData){
+                //    return oidValueHash[snapData.PreliminaryEstimate].Name || "";
+                //};
+                this._addDateSelectors();
+            },
+            scope: this
+        });
+
+
+    },
+
+    fetchSnapshots: function(){
+        var startDate = this.getStartDate(),
+            endDate = this.getEndDate();
+        //Validate
+        this.down('#display_box').removeAll();
+        if (!this._validateDateRange(startDate, endDate)){
+            return;
+        }
+
+        this.logger.log('fetchSnapshots', startDate, endDate, this.getArtifactType());
+
+        var find = {
+            _ProjectHierarchy: {$in: [this.getContext().getProject().ObjectID]},
+            _TypeHierarchy: this.getArtifactType(),
+            _ValidFrom: {$lt: Rally.util.DateTime.toIsoString(endDate)},
+            _ValidTo: {$gte: Rally.util.DateTime.toIsoString(startDate)}
+        };
+        if (this.getConfigurationMap().find){
+            Ext.Object.merge(find,this.getConfigurationMap().find);
+        }
+
+        this.logger.log('find', find,this.getArtifactType() );
+
+        this.setLoading(true);
+        var asf = Ext.create('Rally.technicalservices.AggregateStoreFactory',{
+            find: find,
+            fetch: this.getFetchFields(),
+            configurationMap: this.getConfigurationMap(),
+            hydrate: this.getHydrateFields(),
+            limit: 'Infinity',
+            startDate: startDate,
+            endDate: endDate,
+            aggregateBy: this.getAggregateBy(),
+            sort: {
+                _ValidFrom: 1
+            },
+            removeUnauthorizedSnapshots: true
+        });
+
+        asf.load();
+        asf.on('storeready',this._addGrid, this);
+        asf.on('error',this._showErrorMessage, this);
+    },
+    _validateDateRange: function(startDate, endDate){
+        if (!startDate || !endDate){
+            this.down('#display_box').add({
+                xtype: 'container',
+                html: 'Please Select a valid Start Date and End Date'
+            });
+            return false;
+        }
+
+        var delta =Rally.util.DateTime.getDifference(endDate,startDate,  'day');
+        this.logger.log('_validateDateRange', startDate, endDate, delta);
+        if (delta < 0){
+            this.down('#display_box').add({
+                xtype: 'container',
+                html: 'Please Select a Start Date that falls before the End Date'
+            });
+            return false;
+        }
+        if (delta > this.getMaxDayRange()){
+            this.down('#display_box').add({
+                xtype: 'container',
+                html: 'Date range too large.  Please Select a date range of ' + this.getMaxDayRange() + " days or less."
+            });
+            return false;
+        }
+        return true;
+    },
+    _showErrorMessage: function(msg){
+        this.logger.log('_showError', msg);
+        this.setLoading(false);
+        Rally.ui.notify.Notifier.showError({message: msg});
+    },
+    _addGrid: function(data, fields){
+        this.logger.log('_addGrid', data, fields);
+
+        this.setLoading(false);
+
+        this.down('#btn-export').setDisabled(false);
+
+        var store = Ext.create('Rally.data.custom.Store', {
+            data: data,
+            fields: fields
+        });
+
+        this.down('#display_box').add({
+            xtype: 'rallygrid',
+            showRowActionsColumn: false,
+            store: store,
+            columnCfgs: this._getColumns(fields)
+        });
+    },
+    _getColumns: function(fields){
+        return _.map(fields, function(f){
+            var col = {text: f, dataIndex: f, flex: 1 };
+            if (f === "Day"){
+                col.renderer = function(v){
+                    return Rally.util.DateTime.toIsoString(v);
+                }
+            }
+            return col;
+        });
+    },
+    getFetchFields: function(){
+        this.logger.log('getFetchFields',this.getArtifactType());
+        return this.getConfigurationMap().fetch;
+    },
+    getConfigurationMap: function(){
+        return Rally.technicalServices.LookbackSnapshotAggregatorSettings.configurationMap[this.getArtifactType()];
+    },
+    getHydrateFields: function(){
+        return this.getConfigurationMap().hydrate;
+    },
+    getArtifactType: function(){
+        return this.down('#artifactType').getValue();
+        //return this.getSetting('artifactType');
+    },
+    getAggregateBy: function(){
+        return this.down('#aggregateBy').getValue();
+        //return this.getSetting('aggregateBy');
+    },
+    getMaxDayRange: function(){
+        return this.getSetting('maxDayRange');
+    },
+    getDefaultDayRange: function(){
+        return this.getSetting('defaultDayRange');
+    },
+    _addDateSelectors: function(){
+        this.down('#selector_box').removeAll();
+        this.down('#display_box').removeAll();
+
+        var configurationData = _.values(Rally.technicalServices.LookbackSnapshotAggregatorSettings.configurationMap),
+            width = 100;
+
+        this.getSelectorBox().add({
+            xtype: 'rallycombobox',
+            itemId: 'artifactType',
+            store: Ext.create('Ext.data.Store', {data: configurationData, fields: ['name','displayName']}),
+            fieldLabel: "Artifact Type",
+            labelAlign: 'right',
+            labelWidth: width,
+            displayField: 'displayName',
+            valueField: 'name'
+        });
+
+        this.getSelectorBox().add({
+            xtype: 'rallycombobox',
+            itemId: 'aggregateBy',
+            store: Ext.create('Ext.data.Store',{data: Rally.technicalServices.LookbackSnapshotAggregatorSettings.aggregateByOptions, fields: ['name','value']}),
+            displayField: 'name',
+            valueField: 'value',
+            labelAlign: 'right',
+            labelWidth: width,
+            fieldLabel: "Aggregate By"
+        });
+
+
+        var today = new Date();
+
+      //  this.getSelectorBox().add(this.getDateSelectorConfig('gDate','Start Date',Rally.util.DateTime.add(today,"day",-this.getDefaultDayRange())));
+        this.getSelectorBox().add(this.getDateSelectorConfig('dt-endDate','Day',today));
+        var btn = this.getSelectorBox().add({
+            xtype: 'rallybutton',
+            text: 'Update',
+            margin: '0 10 0 10'
+        });
+        btn.on('click', this.fetchSnapshots, this);
+
+        var btn = this.getSelectorBox().add({
+            xtype: 'rallybutton',
+            itemId: 'btn-export',
+            text: 'Export',
+            margin: '0 10 0 10',
+            disabled: true
+        });
+        btn.on('click', this.export, this);
+
+    },
+    export: function(){
+        this.logger.log('export');
+        Rally.technicalservices.FileUtilities.getCSVFromGrid(this.down('rallygrid')).then({
+            success: function(csv){
+                this.logger.log('csv',csv);
+                Rally.technicalservices.FileUtilities.saveCSVToFile(csv, "export.csv");
+            },
+            scope: this
+        });
+
+    },
+    getDateSelectorConfig: function(itemId, label,defaultValue){
+        return {
+            xtype: 'rallydatefield',
+            itemId: itemId,
+            fieldLabel: label,
+            labelAlign: 'right',
+            value: defaultValue
+        };
+    },
+    getSelectorBox: function(){
+        return this.down('#selector_box');
+    },
+    getStartDate: function(){
+        var day = this.getSelectorBox().down('#dt-endDate').getValue();
+        day.setHours(0,0,0,0);
+        return day; //beginning of day
+    },
+    getEndDate: function(){
+        this.logger.log('getEndDate', this.getStartDate());
+        return Rally.util.DateTime.add(this.getStartDate(), "day", 1);
+    },
+    getSettingsFields: function(){
+        return [];  //Rally.technicalServices.LookbackSnapshotAggregatorSettings.getFields();
+    },
+    getOptions: function() {
+        return [
+            {
+                text: 'About...',
+                handler: this._launchInfo,
+                scope: this
+            }
+        ];
+    },
+    _launchInfo: function() {
+        if ( this.about_dialog ) { this.about_dialog.destroy(); }
+        this.about_dialog = Ext.create('Rally.technicalservices.InfoLink',{});
+    },
+    isExternal: function(){
+        return typeof(this.getAppId()) == 'undefined';
+    },
+    onSettingsUpdate: function (settings){
+        this.logger.log('onSettingsUpdate',settings);
+        Ext.apply(this, settings);
+        this._addDateSelectors();
+    }
+});
+
+(function() {
+
+    var Ext = window.Ext4 || window.Ext;
+
+    /**
+     * A paging toolbar to be used with a Rally.ui.grid.Grid.
+     * Displays the range of data displayed, the total count of records, and the currently selected page size.
+     * It also allows you to change the page size.
+     *
+     * In general, this class will not be created directly but instead will be instantiated by Rally.ui.grid.Grid
+     * as specified by its pagingToolbarCfg:
+     *
+     *     pagingToolbarCfg: {
+     *        pageSizes: [5, 10, 25]
+     *     }
+     */
+    Ext.define('Rally.ui.grid.PagingToolbar', {
+        requires: [
+            'Ext.XTemplate',
+            'Ext.data.StoreManager',
+            'Rally.ui.combobox.ComboBox',
+            'Rally.ui.Button'
+        ],
+        extend : 'Ext.Component',
+        alias : 'widget.rallypagingtoolbar',
+
+        mixins: {
+            clientMetrics: 'Rally.clientmetrics.ClientMetricsRecordable'
+        },
+
+        clientMetrics: [
+            {
+                method: 'movePrevious',
+                description: 'page change to previous'
+            },
+            {
+                method: 'moveNext',
+                description: 'page change to next'
+            }
+        ],
+
+        /**
+         * @property {Boolean} border True to show border
+         */
+        border: false,
+
+        /**
+         * @cfg {String} cls A CSS class that will be added to the toolbar's element
+         */
+        cls: 'grid-pager',
+
+        config : {
+            /**
+             * @cfg {Ext.data.Store} store (required)
+             * store the pager should use as its data source
+             */
+            store: undefined,
+
+            /**
+             * @cfg {Array}
+             * valid page sizes
+             */
+            pageSizes: [25, 50, 100, 200],
+
+            /**
+             * @cfg {Object}
+             * Config passed to the pagesize combobox
+             */
+            comboboxConfig: {}
+        },
+
+        renderSelectors : {
+            firstEl : '.nav-links .rly-first',
+            prevEl : '.rly-prev',
+            nextEl : '.rly-next',
+            lastEl : '.rly-last',
+            pageSizeEl : '.page-size-links'
+        },
+
+        renderTpl : new Ext.XTemplate(
+            '<tpl if="pageSizes.length &gt; 1">',
+            '<div class="page-size-links">',
+            '<div class="page-size-label">SHOW</div>',
+            '<div class="page-size-combobox-container"></div>',
+            '</div>',
+            '</tpl>',
+            '<div class="nav-links">',
+            '<span class="rly-first"></span> ',
+            '<span class="rly-prev"></span> ',
+            '<span class="range">',
+            '{start}-{end}',
+            '<tpl if="total &gt; 0">',
+            ' of {total}',
+            '</tpl>',
+            '</span> ',
+            '<span class="rly-next"></span> ',
+            '<span class="rly-last"></span> ',
+            '</div>'
+        ),
+
+        constructor: function(config) {
+            this.callParent(arguments);
+
+            this.addEvents(
+                /**
+                 * @event
+                 * Fires after the active page has been changed.
+                 * @param {Rally.ui.grid.PagingToolbar} this
+                 * @param {Object} pageData An object that has these properties:
+                 * @param {Number} pageData.total The total number of records in the dataset as returned by the server
+                 * @param {Number} pageData.currentPage The current page number
+                 * @param {Number} pageData.pageCount The total number of pages
+                 * @param {Number} pageData.start The starting record index for the current page
+                 * @param {Number} pageData.end The ending record index for the current page
+                 * @param {Number} pageData.pageSize The current page size
+                 */
+                'change',
+
+                /**
+                 * @event
+                 * Fires just before the active page is changed. Return false to prevent the active page from being changed.
+                 * @param {Rally.ui.grid.PagingToolbar} this
+                 * @param {Number} page The page number that will be loaded on change
+                 */
+                'beforechange'
+            );
+        },
+
+        initComponent: function() {
+            this.callParent();
+            this.on('beforerender', this._onBeforeRender, this);
+            this.bindStore(this.store);
+        },
+
+        /**
+         * @private
+         */
+        onRender: function() {
+            this.callParent(arguments);
+            this._reRender();
+            this.el.dom.tabIndex = 0;
+        },
+
+        /**
+         * @private
+         */
+        onDestroy: function() {
+            this._cleanupAdditionalComponents();
+            this.callParent(arguments);
+        },
+
+        _addPageSizeCombobox: function() {
+            if (this.pageSizeEl) {
+                this.pagingComboBox = Ext.create('Rally.ui.combobox.ComboBox', Ext.apply({
+                    cls: 'page-size-combobox',
+                    itemId: 'pageSizeBox',
+                    listeners: {
+                        select: this.changePageSize,
+                        scope: this
+                    },
+                    store: Ext.create('Ext.data.Store', {
+                        fields: ['value', 'display'],
+                        data: this._generatePageSizeData()
+                    }),
+                    queryMode: 'local',
+                    displayField: 'display',
+                    valueField: 'value',
+                    renderTo: this.pageSizeEl.down('.page-size-combobox-container'),
+                    width: 50,
+                    value: this.renderData.pageSize
+                }, this.comboboxConfig));
+            }
+        },
+
+        _addButtons: function() {
+            var disableBack = this.renderData.currentPage === 1,
+                disableForward = this.renderData.currentPage >= this.renderData.pageCount;
+
+            this.firstButton = this._addButton('firstButton', 'First', this.moveFirst, disableBack, this.firstEl);
+            this.prevButton = this._addButton('prevButton', 'Prev', this.movePrevious, disableBack, this.prevEl);
+            this.nextButton = this._addButton('nextButton', 'Next', this.moveNext, disableForward, this.nextEl);
+            this.lastButton = this._addButton('lastButton', 'Last', this.moveLast, disableForward, this.lastEl);
+        },
+
+        _addButton: function(itemId, text, clickFn, disabled, renderEl) {
+
+            return Ext.create('Rally.ui.Button', {
+                itemId: itemId,
+                text: text,
+                cls: 'secondary rly-small',
+                listeners: {
+                    click: clickFn,
+                    scope: this
+                },
+                disabled: disabled,
+                renderTo: renderEl
+            });
+        },
+
+        _cleanupAdditionalComponents: function() {
+            Ext.destroy(this.pagingComboBox, this.firstButton, this.prevButton, this.nextButton, this.lastButton);
+        },
+
+        _generatePageSizeData: function(){
+            return _.map(this.pageSizes, function (size) {
+                return {display: size, value: size};
+            });
+        },
+
+        _reRender : function() {
+            if (this.rendered !== true) {
+                return;
+            }
+
+            this._cleanupAdditionalComponents();
+
+            this.renderData = this._getPageData();
+            this.renderTpl.overwrite(this.getTargetEl(), this.renderData);
+
+            this.applyRenderSelectors();
+            this._addPageSizeCombobox();
+            this._addButtons();
+
+            this.fireEvent('change', this, this.renderData);
+        },
+
+        _onFirstLoad: function() {
+            this._reRender();
+            this.mon(this.getStore(), 'load', this._onSubsequentLoads, this);
+        },
+
+        _onSubsequentLoads: function() {
+            this._reRender();
+            this._recordMetricsEnd();
+        },
+
+        /**
+         * Move to the previous page of data
+         */
+        movePrevious: function() {
+            var store = this.getStore(),
+                prev = store.currentPage - 1;
+
+            if (prev > 0) {
+                if (this.fireEvent('beforechange', this, prev) !== false) {
+                    this._recordMetricsBegin('loading previous page');
+                    store.previousPage();
+                }
+            }
+        },
+
+        /**
+         * Move to the next page of data
+         */
+        moveNext: function() {
+            var store = this.getStore(),
+                total = this._getPageData().pageCount,
+                next = store.currentPage + 1;
+
+            if (next <= total) {
+                if (this.fireEvent('beforechange', this, next) !== false) {
+                    this._recordMetricsBegin('loading next page');
+                    store.nextPage();
+                }
+            }
+        },
+
+        /**
+         * Move to the first page of data
+         */
+        moveFirst: function() {
+            var store = this.getStore(),
+                currentPage = store.currentPage;
+
+            if (currentPage > 1) {
+                if (this.fireEvent('beforechange', this, 1) !== false) {
+                    this._recordMetricsBegin('loading first page');
+                    this.getStore().loadPage(1);
+                }
+            }
+        },
+
+        /**
+         * Move to the last page of data
+         */
+        moveLast: function() {
+            var store = this.getStore(),
+                currentPage = store.currentPage,
+                lastPage = this._getPageData().pageCount;
+
+            if (currentPage < lastPage) {
+                if (this.fireEvent('beforechange', this, lastPage) !== false) {
+                    this._recordMetricsBegin('loading last page');
+                    this.getStore().loadPage(lastPage);
+                }
+            }
+        },
+
+        /**
+         * Change the current page size
+         * @param {Number} newSize New page size, must be a valid page size {@link #pageSizes}
+         * @return {Boolean} If page size was changed
+         */
+        changePageSize: function(combobox, newSize) {
+            newSize = newSize[0].get('value');
+
+            if (this._isCurrentPageSize(newSize)) {
+                return false;
+            }
+
+            var store = this.getStore();
+            store.pageSize = newSize;
+            store.currentPage = 1;
+            this.ownerCt.refresh();
+            var listView = this.up('rallylistview');
+            if(listView) {
+                listView.storePageSize(newSize);
+            }
+            this._reRender();
+            return true;
+        },
+
+        _onBeforeRender: function() {
+            this.renderData = this._getPageData();
+        },
+
+        /**
+         * @private
+         * @param {Number} size
+         */
+        _isCurrentPageSize: function(size) {
+            return this.getStore().pageSize === size;
+        },
+
+        /**
+         * @private
+         * @return {Object}
+         */
+        _getPageData: function() {
+            var store = this.getStore();
+
+            if (!store) {
+                return {
+                    total: 0,
+                    currentPage: 0,
+                    pageCount: 0,
+                    pageSize : 0,
+                    start: 0,
+                    end: 0,
+                    pageSizes: 0
+                };
+            }
+
+            var totalCount = store.getTotalCount() || 0,
+                start = ((store.currentPage - 1) * store.pageSize) + 1;
+
+            if (totalCount === 0) {
+                start = 0;
+            }
+
+            return {
+                total: totalCount,
+                currentPage: store.currentPage,
+                pageCount: Math.ceil(totalCount / store.pageSize),
+                pageSize : store.pageSize,
+                start: start,
+                end: Math.min(store.currentPage * store.pageSize, totalCount),
+                pageSizes: this.getPageSizes()
+            };
+        },
+
+        _recordMetricsBegin: function(description) {
+            this.loadingPage = true;
+
+            this.recordLoadBegin({
+                description: description,
+                component: this.getStore().requester || this
+            });
+        },
+
+        _recordMetricsEnd: function() {
+            if (this.loadingPage) {
+                this.recordLoadEnd({ component: this.getStore().requester || this });
+                this.loadingPage = false;
+            }
+        },
+
+        /**
+         * Binds the pager to the Ext.data.Store
+         * @param {Ext.data.Store} store The store to bind to this toolbar
+         */
+        bindStore: function(store) {
+            if (store) {
+                store = Ext.data.StoreManager.lookup(store);
+                this.mon(store, 'load', this._onFirstLoad, this, {single: true});
+                this.setStore(store);
+            }
+        }
+    });
+
+})();
+            
+               Rally.launchApp('Rally.technicalServices.LookbackSnapshotAggregator', {
+                   name: 'Lookback Snapshot Aggregator'
+               });
+        });
+    </script>
+    
+    <style type="text/css">
+
+.app {
+}
+.tsinfolink {
+    position:absolute;
+    right:0px;
+    width: 14px;
+    height: 14px;
+    border-radius: 7px;
+    text-align: center;
+    color: white;
+    background: #C0C0C0;
+    border-style: solid;
+    border-width: 1px;
+    margin-top: 25px;
+    margin-right: 5px;
+    cursor: pointer;
+}
+
+
+.grid-pager {
+    margin: 5px 0 0 0;
+}
+.grid-pager  .nav-links {
+    float: right;
+    font-size: 12px;
+}
+
+.nav-links .rly-first{
+    display: inline-block;
+    vertical-align: middle;
+}
+.nav-links .rly-prev{
+    display: inline-block;
+    vertical-align: middle;
+    border: 0px!important;
+}
+.nav-links .rly-next{
+    display: inline-block;
+    vertical-align: middle;
+    border: 0px!important;
+}
+.nav-links .rly-last{
+    display: inline-block;
+    vertical-align: middle;
+}
+.nav-links .range {
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.nav-links .range {
+    margin-right: 10px;
+}
+
+
+.grid-pager .page-size-links {
+
+    float: left;
+}
+.grid-pager .page-size-label {
+    display: inline-block;
+}
+
+.grid-pager .page-size-combobox-container {
+    display: inline-block;
+    margin-left: 10px;
+    vertical-align: middle;
+}
+
+    </style>
+
+</head>
+<body></body>
+</html>
